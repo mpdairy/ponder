@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div id="app">
+    <h1>Review Questions — Settings</h1>
+
+    <label for="proxy-url">Proxy URL</label>
+    <input id="proxy-url" type="url" placeholder="http://localhost:8787">
+    <p class="hint">Local dev server or Cloudflare Worker URL</p>
+
+    <label for="proxy-token">Proxy token</label>
+    <input id="proxy-token" type="password" placeholder="Leave blank for local dev">
+    <p class="hint">Required for the Cloudflare Worker proxy</p>
+
+    <label for="question-count">Maximum questions: <span id="count-display">10</span></label>
+    <input id="question-count" type="range" min="4" max="30" value="10">
+
+    <label class="checkbox-label">
+      <input id="show-difficulty" type="checkbox">
+      Include difficulty hints
+    </label>
+
+    <button id="save">Save</button>
+    <p id="status" class="status hidden">Saved!</p>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

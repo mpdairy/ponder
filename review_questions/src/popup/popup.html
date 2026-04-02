@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <h1>Review Questions</h1>
+    <p id="detected" class="detected">Detecting content...</p>
+    <p id="hint" class="hint hidden">Highlight text on the page, then re-open this popup</p>
+    <label class="slider-label" for="max-q">Max questions: <span id="max-q-display">10</span></label>
+    <input id="max-q" type="range" min="4" max="30" value="10">
+    <button id="generate" disabled>Generate Questions</button>
+    <p id="status" class="status hidden"></p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

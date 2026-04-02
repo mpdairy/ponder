@@ -1,0 +1,6 @@
+node_modules/
+dist/
+proxy/local/node_modules/
+proxy/cloudflare/node_modules/
+.env
+*.log

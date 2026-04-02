@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Questions</title>
+  <link rel="stylesheet" href="results.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1 id="title">Review Questions</h1>
+      <p id="source" class="source"></p>
+    </header>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Generating review questions...</p>
+    </div>
+
+    <div id="error" class="error hidden">
+      <p id="error-message"></p>
+    </div>
+
+    <div id="results" class="hidden">
+      <div class="toolbar">
+        <span id="adapter-badge" class="badge"></span>
+        <button id="copy-btn" class="copy-btn">Copy All</button>
+      </div>
+      <ol id="questions-list"></ol>
+    </div>
+  </div>
+  <script src="results.js"></script>
+</body>
+</html>
