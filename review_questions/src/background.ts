@@ -2,7 +2,8 @@ import type { ExtMessage, ExtractResponse, FetchResponse, StoredResult, Extensio
 
 const DEFAULTS: ExtensionOptions = {
   proxyUrl: 'http://localhost:8787',
-  questionCount: 6,
+  proxyToken: '',
+  maxQuestions: 10,
   showDifficulty: false,
 };
 

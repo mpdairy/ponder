@@ -2,7 +2,7 @@ import { YoutubeTranscript } from 'youtube-transcript';
 
 interface Env {
   ANTHROPIC_API_KEY: string;
-  PROXY_TOKEN: string; // wrangler secret put PROXY_TOKEN
+  PONDER_PROXY_TOKEN: string; // wrangler secret put PONDER_PROXY_TOKEN
 }
 
 const SYSTEM_PROMPT = `You are a review question generator. Given the text content of an article or video transcript, generate open-ended review questions that test comprehension of the key ideas, arguments, and facts presented.
@@ -42,10 +42,10 @@ function parseQuestions(text: string): string[] {
 }
 
 function checkAuth(request: Request, env: Env): Response | null {
-  if (!env.PROXY_TOKEN) return null;
+  if (!env.PONDER_PROXY_TOKEN) return null;
   const auth = request.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (token !== env.PROXY_TOKEN) {
+  if (token !== env.PONDER_PROXY_TOKEN) {
     return corsResponse(JSON.stringify({ error: 'Invalid or missing token' }), 401);
   }
   return null;
