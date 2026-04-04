@@ -52,7 +52,9 @@ function renderResult(result: StoredResult) {
   questionsList.innerHTML = '';
   for (const q of result.questions || []) {
     const li = document.createElement('li');
-    li.textContent = q.replace(/<[^>]*>/g, '');
+    // Strip HTML tags except <b>, then convert **markdown bold** to <b>
+    const safe = q.replace(/<\/?(?!b\b)[^>]*>/g, '').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    li.innerHTML = safe;
     questionsList.appendChild(li);
   }
 

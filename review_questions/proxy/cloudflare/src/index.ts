@@ -13,7 +13,7 @@ Rules:
 - Questions should be answerable purely from the provided content
 - Order questions roughly by where the relevant content appears
 - Be specific enough that a vague answer wouldn't suffice
-- Bold key terms in each question using <b> tags
+- Bold key terms in each question using **markdown bold**
 - Do not include answers
 
 Respond with only the numbered questions, no preamble.`;
