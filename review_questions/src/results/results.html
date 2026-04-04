@@ -28,6 +28,16 @@
         <button id="copy-btn" class="copy-btn">Copy All</button>
       </div>
       <ol id="questions-list"></ol>
+
+      <div id="summary-section" class="summary-section">
+        <button id="summary-btn" class="summary-btn">Generate Summary</button>
+        <div id="summary-loading" class="summary-loading hidden">
+          <div class="spinner"></div>
+          <p>Generating summary...</p>
+        </div>
+        <div id="summary-error" class="summary-error hidden"></div>
+        <div id="summary-content" class="summary-content hidden"></div>
+      </div>
     </div>
   </div>
   <script src="results.js"></script>

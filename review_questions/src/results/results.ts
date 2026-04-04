@@ -9,6 +9,10 @@ const resultsEl = document.getElementById('results')!;
 const questionsList = document.getElementById('questions-list')!;
 const adapterBadge = document.getElementById('adapter-badge')!;
 const copyBtn = document.getElementById('copy-btn')!;
+const summaryBtn = document.getElementById('summary-btn')!;
+const summaryLoading = document.getElementById('summary-loading')!;
+const summaryError = document.getElementById('summary-error')!;
+const summaryContent = document.getElementById('summary-content')!;
 
 function renderResult(result: StoredResult) {
   if (result.title) {
@@ -51,6 +55,42 @@ function renderResult(result: StoredResult) {
     li.textContent = q.replace(/<[^>]*>/g, '');
     questionsList.appendChild(li);
   }
+
+  // Hide summary button if no source text available
+  if (!result.sourceText) {
+    summaryBtn.classList.add('hidden');
+  }
+
+  renderSummary(result);
+}
+
+function renderSummary(result: StoredResult) {
+  if (result.summaryStatus === 'loading') {
+    summaryBtn.classList.add('hidden');
+    summaryLoading.classList.remove('hidden');
+    summaryError.classList.add('hidden');
+    summaryContent.classList.add('hidden');
+    return;
+  }
+
+  if (result.summaryStatus === 'error') {
+    summaryBtn.classList.remove('hidden');
+    summaryBtn.disabled = false;
+    summaryLoading.classList.add('hidden');
+    summaryError.classList.remove('hidden');
+    summaryError.textContent = result.summaryError || 'Summary generation failed';
+    summaryContent.classList.add('hidden');
+    return;
+  }
+
+  if (result.summaryStatus === 'done' && result.summary) {
+    summaryBtn.classList.add('hidden');
+    summaryLoading.classList.add('hidden');
+    summaryError.classList.add('hidden');
+    summaryContent.classList.remove('hidden');
+    summaryContent.textContent = result.summary;
+    return;
+  }
 }
 
 function setupCopy(result: StoredResult) {
@@ -80,16 +120,31 @@ async function init() {
     setupCopy(latestResult);
   }
 
-  // If still loading, watch for updates
-  if (latestResult.status === 'loading') {
-    chrome.storage.local.onChanged.addListener((changes) => {
-      if (changes.latestResult?.newValue) {
-        const updated = changes.latestResult.newValue as StoredResult;
-        renderResult(updated);
-        if (updated.status === 'done') setupCopy(updated);
-      }
-    });
-  }
+  // Watch for updates (loading → done, or summary updates)
+  chrome.storage.local.onChanged.addListener((changes) => {
+    if (changes.latestResult?.newValue) {
+      const updated = changes.latestResult.newValue as StoredResult;
+      renderResult(updated);
+      if (updated.status === 'done') setupCopy(updated);
+    }
+  });
+
+  // Summary button
+  summaryBtn.addEventListener('click', async () => {
+    summaryBtn.disabled = true;
+    summaryLoading.classList.remove('hidden');
+    summaryBtn.classList.add('hidden');
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'GENERATE_SUMMARY' });
+      if (resp?.error) throw new Error(resp.error);
+    } catch (err: any) {
+      summaryLoading.classList.add('hidden');
+      summaryBtn.classList.remove('hidden');
+      summaryBtn.disabled = false;
+      summaryError.classList.remove('hidden');
+      summaryError.textContent = err.message || 'Something went wrong';
+    }
+  });
 }
 
 init();

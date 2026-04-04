@@ -20,6 +20,15 @@ Rules:
 
 Respond with only the numbered questions, no preamble.`;
 
+const SUMMARY_PROMPT = `You are a concise summarizer. Given the text content of an article or video transcript, write a clear, well-structured summary that captures the key ideas, arguments, and conclusions.
+
+Rules:
+- Write in flowing prose paragraphs, not bullet points
+- Cover the main arguments and key facts
+- Keep it proportional to the source — a short piece gets a short summary, a long one gets a longer summary, but always stay concise
+- Do not editorialize or add your own opinions
+- Do not mention that you are summarizing — just present the content`;
+
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -80,6 +89,38 @@ async function handleTranscript(request: Request, env: Env): Promise<Response> {
   return corsResponse(JSON.stringify({ text, title }), 200);
 }
 
+async function handleSummarize(request: Request, env: Env): Promise<Response> {
+  const authErr = checkAuth(request, env);
+  if (authErr) return authErr;
+
+  const { text } = await request.json<any>();
+  if (!text) {
+    return corsResponse(JSON.stringify({ error: 'Missing "text" field' }), 400);
+  }
+
+  const apiResp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: SUMMARY_PROMPT,
+      messages: [{ role: 'user', content: `<content>\n${text}\n</content>` }],
+    }),
+  });
+
+  if (!apiResp.ok) {
+    return corsResponse(JSON.stringify({ error: `Claude API error: ${apiResp.status}` }), 502);
+  }
+
+  const data = await apiResp.json<any>();
+  return corsResponse(JSON.stringify({ summary: data.content[0].text }), 200);
+}
+
 async function handleGenerate(request: Request, env: Env): Promise<Response> {
   const authErr = checkAuth(request, env);
   if (authErr) return authErr;
@@ -137,6 +178,8 @@ export default {
           return await handleTranscript(request, env);
         case '/generate':
           return await handleGenerate(request, env);
+        case '/summarize':
+          return await handleSummarize(request, env);
         default:
           return corsResponse(JSON.stringify({ error: 'Not found' }), 404);
       }

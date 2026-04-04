@@ -85,6 +85,14 @@ chrome.runtime.onMessage.addListener(
       return true; // async
     }
 
+    // Results page asks us to generate a summary
+    if (message.type === 'GENERATE_SUMMARY') {
+      handleSummary().then(sendResponse).catch(err => {
+        sendResponse({ error: err.message });
+      });
+      return true; // async
+    }
+
     return false;
   }
 );
@@ -182,6 +190,7 @@ async function handleGenerate(): Promise<{ ok: boolean }> {
       title,
       url: tab.url || '',
       adapterName,
+      sourceText: text,
       timestamp: Date.now(),
     };
     await chrome.storage.local.set({ latestResult: doneResult });
@@ -195,6 +204,52 @@ async function handleGenerate(): Promise<{ ok: boolean }> {
       error: err.message || 'Something went wrong',
     };
     await chrome.storage.local.set({ latestResult: errorResult });
+  }
+
+  return { ok: true };
+}
+
+async function handleSummary(): Promise<{ ok: boolean }> {
+  const { latestResult } = await chrome.storage.local.get('latestResult');
+  if (!latestResult?.sourceText) {
+    throw new Error('No source text available to summarize');
+  }
+
+  const options = await getOptions();
+
+  // Mark summary as loading
+  latestResult.summaryStatus = 'loading';
+  latestResult.summaryError = undefined;
+  latestResult.summary = undefined;
+  await chrome.storage.local.set({ latestResult });
+
+  const proxyHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (options.proxyToken) {
+    proxyHeaders['Authorization'] = `Bearer ${options.proxyToken}`;
+  }
+
+  try {
+    await ensureProxyPermission(options.proxyUrl);
+    const resp = await fetch(`${options.proxyUrl}/summarize`, {
+      method: 'POST',
+      headers: proxyHeaders,
+      body: JSON.stringify({ text: latestResult.sourceText }),
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => 'Unknown error');
+      throw new Error(`Proxy returned ${resp.status}: ${errBody}`);
+    }
+
+    const { summary } = await resp.json();
+
+    latestResult.summary = summary;
+    latestResult.summaryStatus = 'done';
+    await chrome.storage.local.set({ latestResult });
+  } catch (err: any) {
+    latestResult.summaryStatus = 'error';
+    latestResult.summaryError = err.message || 'Summary generation failed';
+    await chrome.storage.local.set({ latestResult });
   }
 
   return { ok: true };

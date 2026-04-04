@@ -13,7 +13,8 @@ export type ExtMessage =
   | { type: 'EXTRACT_CONTENT' }
   | { type: 'GENERATE_QUESTIONS' }
   | { type: 'FETCH_URL'; url: string }
-  | { type: 'FETCH_IN_PAGE'; url: string };
+  | { type: 'FETCH_IN_PAGE'; url: string }
+  | { type: 'GENERATE_SUMMARY' };
 
 export interface DetectResponse {
   adapterName: string;
@@ -42,6 +43,10 @@ export interface StoredResult {
   adapterName?: string;
   timestamp: number;
   error?: string;
+  sourceText?: string;
+  summary?: string;
+  summaryStatus?: 'loading' | 'done' | 'error';
+  summaryError?: string;
 }
 
 export interface ExtensionOptions {

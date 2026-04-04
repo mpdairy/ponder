@@ -24,6 +24,15 @@ Rules:
 
 Respond with only the numbered questions, no preamble.`;
 
+const SUMMARY_PROMPT = `You are a concise summarizer. Given the text content of an article or video transcript, write a clear, well-structured summary that captures the key ideas, arguments, and conclusions.
+
+Rules:
+- Write in flowing prose paragraphs, not bullet points
+- Cover the main arguments and key facts
+- Keep it proportional to the source — a short piece gets a short summary, a long one gets a longer summary, but always stay concise
+- Do not editorialize or add your own opinions
+- Do not mention that you are summarizing — just present the content`;
+
 function parseQuestions(text: string): string[] {
   return text
     .split('\n')
@@ -122,6 +131,40 @@ app.post('/generate', async (req, res) => {
     res.json({ questions });
   } catch (err: any) {
     console.error('Error:', err.message);
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+app.post('/summarize', async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      res.status(400).json({ error: 'Missing "text" field' });
+      return;
+    }
+
+    if (DEBUG) {
+      console.log(`\n--- SUMMARIZE ${text.length} chars ---\n`);
+      res.json({ summary: `[DEBUG] Would summarize ${text.length} chars of text.` });
+      return;
+    }
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: SUMMARY_PROMPT,
+      messages: [{ role: 'user', content: `<content>\n${text}\n</content>` }],
+    });
+
+    const content = message.content[0];
+    if (content.type !== 'text') {
+      res.status(500).json({ error: 'Unexpected response type from Claude' });
+      return;
+    }
+
+    res.json({ summary: content.text });
+  } catch (err: any) {
+    console.error('Summary error:', err.message);
     res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
