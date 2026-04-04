@@ -13,7 +13,8 @@ export type ExtMessage =
   | { type: 'EXTRACT_CONTENT' }
   | { type: 'GENERATE_QUESTIONS' }
   | { type: 'FETCH_URL'; url: string }
-  | { type: 'FETCH_IN_PAGE'; url: string }
+  | { type: 'FETCH_IN_PAGE'; url: string; nonce: string }
+  | { type: 'FETCH_YT_TRANSCRIPT'; videoId: string; nonce: string }
   | { type: 'GENERATE_SUMMARY' };
 
 export interface DetectResponse {

@@ -52,29 +52,117 @@ chrome.runtime.onMessage.addListener(
       return true; // async
     }
 
-    // Fetch a URL in the page's MAIN world (has page cookies & same-origin)
+    // Fetch a URL in the page's MAIN world (same-origin with page).
+    // Result is sent back via window.postMessage instead of executeScript
+    // return value, which silently drops large response bodies.
     if (message.type === 'FETCH_IN_PAGE') {
       const tabId = sender.tab?.id;
       if (!tabId) {
-        sendResponse({ ok: false, text: '', error: 'No tab ID' } as FetchResponse);
+        sendResponse({});
         return true;
       }
+
+      const { url, nonce } = message as any;
 
       chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN' as any,
-        func: async (url: string) => {
-          const r = await fetch(url);
-          return { ok: r.ok, status: r.status, text: await r.text() };
+        func: async (fetchUrl: string, msgNonce: string) => {
+          try {
+            const r = await fetch(fetchUrl);
+            const text = await r.text();
+            window.postMessage({
+              type: '__ponder_fetch__',
+              nonce: msgNonce,
+              result: { ok: r.ok, status: r.status, text },
+            }, '*');
+          } catch (e: any) {
+            window.postMessage({
+              type: '__ponder_fetch__',
+              nonce: msgNonce,
+              result: { ok: false, text: '', error: e.message || 'fetch failed' },
+            }, '*');
+          }
         },
-        args: [message.url],
-      }).then(results => {
-        const result = results?.[0]?.result as FetchResponse | undefined;
-        sendResponse(result || { ok: false, text: '', error: 'No result from page context' });
-      }).catch(err => {
-        sendResponse({ ok: false, text: '', error: err.message || 'executeScript failed' } as FetchResponse);
+        args: [url, nonce],
+      }).catch(() => {
+        // executeScript failed; content script will time out
       });
-      return true; // async
+
+      sendResponse({});
+      return true;
+    }
+
+    // Fetch YouTube transcript via InnerTube API in the page's MAIN world.
+    // Must run in-page so requests come from youtube.com origin (not extension).
+    if (message.type === 'FETCH_YT_TRANSCRIPT') {
+      const tabId = sender.tab?.id;
+      if (!tabId) {
+        sendResponse({ ok: false, text: '', error: 'No tab ID' });
+        return true;
+      }
+
+      const { videoId, nonce } = message as any;
+
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN' as any,
+        func: async (vid: string, msgNonce: string) => {
+          try {
+            const ANDROID_UA = 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)';
+            const playerResp = await fetch(
+              'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+              {
+                method: 'POST',
+                credentials: 'omit',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'User-Agent': ANDROID_UA,
+                },
+                body: JSON.stringify({
+                  context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },
+                  videoId: vid,
+                }),
+              }
+            );
+            if (!playerResp.ok) throw new Error(`InnerTube API error: ${playerResp.status}`);
+
+            const playerData = await playerResp.json();
+            const tracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+            if (!Array.isArray(tracks) || tracks.length === 0) {
+              throw new Error('No caption tracks from InnerTube');
+            }
+
+            const track = tracks.find((t: any) => t.languageCode === 'en') || tracks[0];
+            const transcriptResp = await fetch(track.baseUrl, {
+              credentials: 'omit',
+              headers: { 'User-Agent': ANDROID_UA },
+            });
+            if (!transcriptResp.ok) throw new Error(`Transcript fetch error: ${transcriptResp.status}`);
+
+            const xml = await transcriptResp.text();
+            if (!xml) throw new Error('Transcript response empty');
+
+            window.postMessage({
+              type: '__ponder_yt_transcript__',
+              nonce: msgNonce,
+              result: { ok: true, text: xml, lang: track.languageCode },
+            }, '*');
+          } catch (e: any) {
+            window.postMessage({
+              type: '__ponder_yt_transcript__',
+              nonce: msgNonce,
+              result: { ok: false, text: '', error: e.message || 'InnerTube fetch failed' },
+            }, '*');
+          }
+        },
+        args: [videoId, nonce],
+      }).catch(() => {
+        // executeScript failed; content script will time out
+      });
+
+      sendResponse({});
+      return true;
     }
 
     // Popup asks us to generate questions
@@ -136,27 +224,6 @@ async function handleGenerate(): Promise<{ ok: boolean }> {
       text = selection;
       adapterName = 'Selection';
       title = tab.title || 'Untitled';
-    } else if (/youtube\.com\/watch/.test(tab.url || '')) {
-      // YouTube: extract transcript server-side via the proxy.
-      // Browser-side extraction hits YouTube's service worker and
-      // returns empty — server-side fetch works reliably.
-      const videoId = new URL(tab.url!).searchParams.get('v');
-      if (!videoId) throw new Error('No video ID in YouTube URL');
-
-      await ensureProxyPermission(options.proxyUrl);
-      const ytResp = await fetch(`${options.proxyUrl}/transcript`, {
-        method: 'POST',
-        headers: proxyHeaders,
-        body: JSON.stringify({ videoId }),
-      });
-      if (!ytResp.ok) {
-        const errBody = await ytResp.text().catch(() => 'Unknown error');
-        throw new Error(`Transcript extraction failed: ${errBody}`);
-      }
-      const ytData = await ytResp.json();
-      text = ytData.text;
-      adapterName = 'YouTube Video';
-      title = ytData.title || tab.title || 'YouTube Video';
     } else {
       const extraction: ExtractResponse & { error?: string } =
         await chrome.tabs.sendMessage(tab.id!, { type: 'EXTRACT_CONTENT' });

@@ -1,56 +1,6 @@
-import type { SiteAdapter, FetchResponse } from '../../shared/types';
+import type { SiteAdapter } from '../../shared/types';
 
 const DEBUG_PREFIX = '[YouTube Debug]';
-
-/**
- * Extract the JSON object starting at `startIdx` in `text`,
- * handling nested braces and string literals correctly.
- */
-function extractJSONObject(text: string, startIdx: number): string | null {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i];
-
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\' && inString) { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) return text.substring(startIdx, i + 1);
-    }
-  }
-  return null;
-}
-
-function findPlayerResponse(): any {
-  const scripts = document.querySelectorAll('script');
-  for (const script of scripts) {
-    const text = script.textContent || '';
-    const marker = 'ytInitialPlayerResponse';
-    const idx = text.indexOf(marker);
-    if (idx === -1) continue;
-
-    // Find the opening brace after the marker
-    const braceIdx = text.indexOf('{', idx + marker.length);
-    if (braceIdx === -1) continue;
-
-    const jsonStr = extractJSONObject(text, braceIdx);
-    if (!jsonStr) continue;
-
-    try {
-      return JSON.parse(jsonStr);
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
 
 function decodeHTMLEntities(text: string): string {
   const el = document.createElement('textarea');
@@ -234,8 +184,24 @@ async function tryOpenTranscriptPanel(): Promise<string | null> {
 function parseXmlTranscript(responseText: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(responseText, 'text/xml');
-  const textNodes = doc.querySelectorAll('text');
 
+  // InnerTube format: <p> tags with <s> children
+  const pNodes = doc.querySelectorAll('p');
+  if (pNodes.length > 0) {
+    const lines = Array.from(pNodes)
+      .map(p => {
+        const segs = p.querySelectorAll('s');
+        const text = segs.length > 0
+          ? Array.from(segs).map(s => s.textContent || '').join('')
+          : p.textContent || '';
+        return normalizeTranscriptText(text);
+      })
+      .filter(Boolean);
+    if (lines.length > 0) return dedupeAdjacent(lines).join(' ');
+  }
+
+  // Legacy format: <text> tags
+  const textNodes = doc.querySelectorAll('text');
   return Array.from(textNodes)
     .map(node => normalizeTranscriptText(node.textContent || ''))
     .filter(Boolean)
@@ -298,68 +264,35 @@ function parseTranscriptResponse(responseText: string): string {
   return '';
 }
 
-function buildTimedTextVariants(baseUrl: string): string[] {
-  const urls: string[] = [];
-  const addVariant = (mutate?: (url: URL) => void) => {
-    const url = new URL(baseUrl);
-    if (mutate) mutate(url);
-    const href = url.toString();
-    if (!urls.includes(href)) urls.push(href);
-  };
+async function extractViaInnerTube(): Promise<string> {
+  const videoId = new URL(window.location.href).searchParams.get('v');
+  if (!videoId) throw new Error('No video ID in URL');
 
-  addVariant();
-  addVariant(url => {
-    url.searchParams.set('fmt', 'json3');
-  });
-  addVariant(url => {
-    url.searchParams.set('fmt', 'vtt');
-  });
-  addVariant(url => {
-    url.searchParams.delete('fmt');
-    url.searchParams.set('xorb', '2');
-    url.searchParams.set('xobt', '3');
-    url.searchParams.set('xovt', '3');
-  });
+  const nonce = `ponder_yt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-  return urls;
-}
+  const resp: any = await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      resolve({ ok: false, text: '', error: 'InnerTube fetch timed out' });
+    }, 20000);
 
-async function fetchTranscriptVariant(url: string): Promise<FetchResponse> {
-  // Fetch in the page's MAIN world so the request has youtube.com cookies
-  // and is same-origin. Extension-origin fetches return empty bodies.
-  return chrome.runtime.sendMessage({ type: 'FETCH_IN_PAGE', url }) as Promise<FetchResponse>;
-}
-
-async function extractFromCaptions(playerResponse: any): Promise<string> {
-  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  if (!tracks?.length) throw new Error('No caption tracks found');
-
-  const track = tracks.find((t: any) => t.languageCode === 'en') || tracks[0];
-  const variants = buildTimedTextVariants(track.baseUrl);
-  const failures: string[] = [];
-
-  for (const url of variants) {
-    const response: FetchResponse = await fetchTranscriptVariant(url);
-    if (!response.ok) {
-      const details = response.error || (response.status ? `HTTP ${response.status}` : 'unknown error');
-      failures.push(`fetch failed for ${summarizeText(url, 100)}: ${details}`);
-      continue;
+    function handler(event: MessageEvent) {
+      if (event.source !== window) return;
+      if (event.data?.type !== '__ponder_yt_transcript__' || event.data?.nonce !== nonce) return;
+      window.removeEventListener('message', handler);
+      clearTimeout(timeout);
+      resolve(event.data.result);
     }
 
-    const transcript = parseTranscriptResponse(response.text);
-    if (transcript) {
-      return transcript;
-    }
+    window.addEventListener('message', handler);
+    chrome.runtime.sendMessage({ type: 'FETCH_YT_TRANSCRIPT', videoId, nonce });
+  });
 
-    failures.push(
-      `empty response for ${summarizeText(url, 100)} status=${response.status || 'unknown'} body=${summarizeText(response.text, 120)}`
-    );
-  }
+  if (!resp.ok) throw new Error(resp.error || 'InnerTube transcript fetch failed');
 
-  throw new Error(
-    `Transcript response contained no text; lang=${track.languageCode || 'unknown'}; ` +
-    `kind=${track.kind || 'standard'}; attempts=${failures.join(' || ')}`
-  );
+  const transcript = parseTranscriptResponse(resp.text);
+  if (!transcript) throw new Error('InnerTube returned XML but no text could be parsed');
+  return transcript;
 }
 
 async function extractFromTranscriptPanel(): Promise<string> {
@@ -398,17 +331,12 @@ const YouTubeAdapter: SiteAdapter = {
   },
 
   async extract(): Promise<string> {
-    const playerResponse = findPlayerResponse();
     const errors: string[] = [];
 
-    if (playerResponse) {
-      try {
-        return await extractFromCaptions(playerResponse);
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : 'Caption extraction failed');
-      }
-    } else {
-      errors.push('Could not locate ytInitialPlayerResponse');
+    try {
+      return await extractViaInnerTube();
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : 'InnerTube extraction failed');
     }
 
     try {

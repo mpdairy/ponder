@@ -1,5 +1,3 @@
-import { YoutubeTranscript } from 'youtube-transcript';
-
 interface Env {
   ANTHROPIC_API_KEY: string;
   PONDER_PROXY_TOKEN: string; // wrangler secret put PONDER_PROXY_TOKEN
@@ -58,35 +56,6 @@ function checkAuth(request: Request, env: Env): Response | null {
     return corsResponse(JSON.stringify({ error: 'Invalid or missing token' }), 401);
   }
   return null;
-}
-
-async function handleTranscript(request: Request, env: Env): Promise<Response> {
-  const authErr = checkAuth(request, env);
-  if (authErr) return authErr;
-
-  const { videoId } = await request.json<any>();
-  if (!videoId) {
-    return corsResponse(JSON.stringify({ error: 'Missing "videoId" field' }), 400);
-  }
-
-  const segments = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
-  const text = segments.map(s => s.text).join(' ').replace(/\s+/g, ' ').trim();
-  if (!text) {
-    return corsResponse(JSON.stringify({ error: 'Transcript returned empty' }), 500);
-  }
-
-  // Get video title from YouTube page
-  let title = 'YouTube Video';
-  try {
-    const pageResp = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
-    const html = await pageResp.text();
-    const titleMatch = html.match(/<title>(.+?)<\/title>/);
-    if (titleMatch) title = titleMatch[1].replace(/ - YouTube$/, '');
-  } catch {}
-
-  return corsResponse(JSON.stringify({ text, title }), 200);
 }
 
 async function handleSummarize(request: Request, env: Env): Promise<Response> {
@@ -174,8 +143,6 @@ export default {
 
     try {
       switch (url.pathname) {
-        case '/transcript':
-          return await handleTranscript(request, env);
         case '/generate':
           return await handleGenerate(request, env);
         case '/summarize':

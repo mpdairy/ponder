@@ -7,9 +7,6 @@
     "deploy": "wrangler deploy",
     "secret:set": "wrangler secret put ANTHROPIC_API_KEY"
   },
-  "dependencies": {
-    "youtube-transcript": "^1.3.0"
-  },
   "devDependencies": {
     "wrangler": "^3.99.0",
     "typescript": "^5.7.0"

@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
-import { YoutubeTranscript } from 'youtube-transcript';
 
 const app = express();
 app.use(cors());
@@ -41,49 +40,6 @@ function parseQuestions(text: string): string[] {
 }
 
 const DEBUG = process.env.DEBUG === '1';
-
-// ---------------------------------------------------------------------------
-// YouTube transcript extraction (server-side via youtube-transcript)
-// ---------------------------------------------------------------------------
-
-app.post('/transcript', async (req, res) => {
-  try {
-    const { videoId } = req.body;
-    if (!videoId) {
-      res.status(400).json({ error: 'Missing "videoId" field' });
-      return;
-    }
-
-    console.log(`Fetching transcript for video: ${videoId}`);
-    const segments = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
-    const text = segments.map(s => s.text).join(' ').replace(/\s+/g, ' ').trim();
-
-    if (!text) throw new Error('Transcript returned empty');
-
-    // Get video title from YouTube page
-    let title = 'YouTube Video';
-    try {
-      const pageResp = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-      });
-      const html = await pageResp.text();
-      const titleMatch = html.match(/<title>(.+?)<\/title>/);
-      if (titleMatch) title = titleMatch[1].replace(/ - YouTube$/, '');
-    } catch {}
-
-    console.log(`Transcript: ${text.length} chars, title: ${title}`);
-    if (DEBUG) {
-      console.log(`\n--- TRANSCRIPT ${text.length} chars ---`);
-      console.log(text.substring(0, 500));
-      console.log(`--- END ---\n`);
-    }
-
-    res.json({ text, title });
-  } catch (err: any) {
-    console.error('Transcript error:', err.message);
-    res.status(500).json({ error: err.message || 'Transcript extraction failed' });
-  }
-});
 
 app.post('/generate', async (req, res) => {
   try {
